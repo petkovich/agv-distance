@@ -4,6 +4,7 @@ import time
 import rospy
 from agv_distance.msg import RobotDistance
 import rospkg
+import serial
 
 def list_to_int(data):
     output = []
@@ -24,6 +25,9 @@ def list_to_int(data):
             pass
     return output
 
+def decode_input(data):
+    data = data.encode('hex')
+
 def talker():
 
     rospy.init_node('AGV_distance_publisher')
@@ -32,41 +36,55 @@ def talker():
     r = rospy.Rate(10)
     aRobot = RobotDistance()
     rospack = rospkg.RosPack()
-    f = open(rospack.get_path('agv_distance')+"/data/NUCprotocol2.txt")
-    line = f.readline()
-
-    while line:
-        print "At", time.time(), "received", len(line), "chars."
-        print line
-        data = line.split(" ")
-        data = list_to_int(data)
-        if data[0]==65535:
-            print "Header is FFFF, check passed."
-        else:
-            print "Error in data, skipping."
-            print line
-            line = f.readline()
+    #f = open(rospack.get_path('agv_distance')+"/data/NUCprotocol2.txt")
+    #line = f.readline()
+    ser = serial.Serial('/dev/ttyUSB0', 115000)
+    #while line:
+    while True:
+        character1 = ser.read()
+        character1 = character1.encode('hex')
+        if character1!='ff':
             continue
+        character1 = ser.read()
+        character1 = character1.encode('hex')
+        if character1!='ff':
+            continue
+        print "FFFF pass check"
+        dummy = ser.read()
+        dummy = ser.read()
+        dummy = ser.read()
+        print "Discarded dummies"
+        robot_num = ser.read()
+        robot_num = robot_num.encode('hex')
+        robot_num = int(robot_num,16)
 
-        print "Number of AGVs is", data[1]
+        print "Number of AGVs is", robot_num
 
-        for i in range(data[1]):
-            print "AGV id:", data[2*i+2]
-            print "AGV range:", data[2*i+3]
+        for i in range(robot_num):
+            agv_id1 = ser.read()
+            agv_id2 = ser.read()
+            agv_id = agv_id1.encode('hex') + agv_id2.encode('hex')
+                  
+            print "AGV id:", int(agv_id,16)
+
+            agv_range1 = ser.read()
+            agv_range2 = ser.read()
+            agv_range = agv_range1.encode('hex') + agv_range2.encode('hex')
+
+            print "AGV range:", int(agv_range,16)
             aRobot.header.stamp = rospy.Time.now()
             aRobot.header.seq = aRobot.header.seq + 1
-            aRobot.id = data[2*i+2]
-            aRobot.distance = data[2*i+3]
+            aRobot.id = int(agv_id,16)
+            aRobot.distance = int(agv_range,16)
             pub.publish(aRobot)
-            r.sleep()
+            #r.sleep()
 
-        if data[-1]==3338:
-            print "Endmark reached"
-        else:
-            print "Wrong endmark:", data[-1], "exiting."
-            break
+        character1 = ser.read()
 
-        line = f.readline()
+        character2 = ser.read()
+
+
+        #line = f.readline()
 
 
 if __name__ == '__main__':
